@@ -28,13 +28,13 @@ public class AnalyzeController : ControllerBase
 			{
 				StartInfo = new ProcessStartInfo
 				{
-					FileName = "python",
+					FileName = "/home/shorbgy/Downloads/GradProject/ThePythonPart/venv/bin/python3",
 					Arguments = $"main.py \"{movieTitle}\"",
 					RedirectStandardOutput = true,
 					RedirectStandardError = true,
 					UseShellExecute = false,
 					CreateNoWindow = true,
-					WorkingDirectory = @"D:\GradProject\ThePythonPart"
+					WorkingDirectory = "/home/shorbgy/Downloads/GradProject/ThePythonPart"
 				}
 			};
 

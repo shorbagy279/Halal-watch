@@ -305,3 +305,4 @@ D:/GradProject/HalalWatch/HalalWatch.API/bin/Debug/net8.0/Microsoft.AspNetCore.A
 /home/shorbgy/Downloads/GradProject/HalalWatch/HalalWatch.API/obj/Debug/net8.0/HalalWatch.API.pdb
 /home/shorbgy/Downloads/GradProject/HalalWatch/HalalWatch.API/obj/Debug/net8.0/HalalWatch.API.genruntimeconfig.cache
 /home/shorbgy/Downloads/GradProject/HalalWatch/HalalWatch.API/obj/Debug/net8.0/ref/HalalWatch.API.dll
+/home/shorbgy/Downloads/GradProject/HalalWatch/HalalWatch.API/obj/Debug/net8.0/HalalWatch.API.sourcelink.json
