@@ -1,72 +1,117 @@
 // app/playlist/[id].tsx
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, Image, FlatList, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert
+  View,
+  Text,
+  FlatList,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import Svg, { Path } from 'react-native-svg';
-import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { playlistApi, PlaylistDetail } from '../../services/api';
-import { useAuth } from '../../hooks/useAuth';
-
-function BackIcon() {
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path d="M19 12H5M5 12L12 19M5 12L12 5" stroke={Colors.textPrimary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
 
 export default function PlaylistDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { isLoggedIn } = useAuth();
-  const playlistId = parseInt(id);
+  const playlistId = parseInt(id || '0');
+  const router = useRouter();
 
   const [playlist, setPlaylist] = useState<PlaylistDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [likes, setLikes] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  // FIX: likes state initialized from actual playlist data
   const [liked, setLiked] = useState(false);
-  const [likingLoading, setLikingLoading] = useState(false);
+  const [likesCount, setLikesCount] = useState(0);
+  const [liking, setLiking] = useState(false);
 
   useEffect(() => {
-    playlistApi.getPlaylist(playlistId)
-      .then((data) => {
-        setPlaylist(data);
-      })
-      .catch(() => Alert.alert('Error', 'Failed to load playlist'))
-      .finally(() => setLoading(false));
+    fetchPlaylist();
   }, [playlistId]);
 
-  const handleLike = async () => {
-    if (!isLoggedIn) {
-      Alert.alert('Sign In Required', 'Please sign in to like playlists.');
-      return;
+  const fetchPlaylist = async () => {
+    try {
+      setLoading(true);
+      const data = await playlistApi.getPlaylist(playlistId);
+      setPlaylist(data);
+      // FIX: populate likes from actual data if available
+      // The PlaylistDetail type may include likes - use it
+      const anyData = data as any;
+      setLikesCount(anyData.likes ?? 0);
+      setLiked(anyData.isLikedByUser ?? false);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
     }
-    setLikingLoading(true);
+  };
+
+  // FIX: Like button now calls API and updates state from response
+  const handleLike = async () => {
+    if (liking) return;
+    setLiking(true);
+    // Optimistic update
+    const wasLiked = liked;
+    setLiked(!wasLiked);
+    setLikesCount((prev) => prev + (wasLiked ? -1 : 1));
+
     try {
       const result = await playlistApi.toggleLike(playlistId);
+      // Update with server truth
       setLiked(result.liked);
-      setLikes(result.likes);
+      setLikesCount(result.likes);
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      // Revert on failure
+      setLiked(wasLiked);
+      setLikesCount((prev) => prev + (wasLiked ? 1 : -1));
+      Alert.alert('Error', 'Please log in to like playlists.');
     } finally {
-      setLikingLoading(false);
+      setLiking(false);
     }
+  };
+
+  const handleRemoveMovie = async (tmdbId: number, title: string) => {
+    Alert.alert('Remove Movie', `Remove "${title}" from this playlist?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await playlistApi.removeMovie(playlistId, tmdbId);
+            setPlaylist((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    movies: prev.movies.filter((m) => m.tmdbId !== tmdbId),
+                  }
+                : prev
+            );
+          } catch (e: any) {
+            Alert.alert('Error', e.message);
+          }
+        },
+      },
+    ]);
   };
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator color={Colors.primary} size="large" />
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#22C55E" />
       </View>
     );
   }
 
-  if (!playlist) {
+  if (error || !playlist) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={{ color: Colors.textMuted }}>Playlist not found</Text>
+      <View style={styles.center}>
+        <Text style={styles.errorText}>{error || 'Playlist not found'}</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Text style={styles.backBtnText}>← Go Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -75,241 +120,171 @@ export default function PlaylistDetailScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <BackIcon />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
+        <View style={styles.headerInfo}>
+          <Text style={styles.playlistName} numberOfLines={2}>{playlist.name}</Text>
+          {playlist.description ? (
+            <Text style={styles.playlistDesc} numberOfLines={2}>{playlist.description}</Text>
+          ) : null}
+          <Text style={styles.playlistOwner}>by {playlist.owner}</Text>
+        </View>
+        {/* FIX: Like button with real count from API */}
         <TouchableOpacity
-          style={[styles.likeBtn, liked && styles.likeBtnActive]}
           onPress={handleLike}
-          disabled={likingLoading}
+          style={[styles.likeButton, liked && styles.likeButtonActive]}
+          disabled={liking}
         >
-          {likingLoading ? (
-            <ActivityIndicator color={liked ? Colors.textInverse : Colors.primary} size="small" />
+          {liking ? (
+            <ActivityIndicator size="small" color={liked ? '#EF4444' : '#64748B'} />
           ) : (
             <>
-              <Text style={[styles.likeIcon, liked && styles.likeIconActive]}>♥</Text>
+              <Text style={styles.likeIcon}>{liked ? '❤️' : '🤍'}</Text>
               <Text style={[styles.likeCount, liked && styles.likeCountActive]}>
-                {likes}
+                {likesCount}
               </Text>
             </>
           )}
         </TouchableOpacity>
       </View>
 
-      {/* Playlist Info */}
-      <View style={styles.info}>
-        <Text style={styles.playlistName}>{playlist.name}</Text>
-        {playlist.description ? (
-          <Text style={styles.playlistDesc}>{playlist.description}</Text>
-        ) : null}
-        <View style={styles.metaRow}>
-          <Text style={styles.metaText}>by {playlist.owner}</Text>
-          <Text style={styles.metaDot}>·</Text>
-          <Text style={styles.metaText}>{playlist.movies.length} films</Text>
-          <Text style={styles.metaDot}>·</Text>
-          <Text style={[styles.metaText, { color: playlist.isPublic ? Colors.primary : Colors.textMuted }]}>
-            {playlist.isPublic ? 'Public' : 'Private'}
-          </Text>
-        </View>
+      {/* Movie count */}
+      <View style={styles.statsBar}>
+        <Text style={styles.statsText}>
+          🎬 {playlist.movies.length} {playlist.movies.length === 1 ? 'movie' : 'movies'}
+        </Text>
+        {playlist.isPublic && <Text style={styles.publicBadge}>Public</Text>}
       </View>
 
-      {/* Divider */}
-      <View style={styles.divider} />
-
-      {/* Movies */}
-      {playlist.movies.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyEmoji}>🎬</Text>
-          <Text style={styles.emptyTitle}>No movies yet</Text>
-          <Text style={styles.emptyDesc}>Search for films and add them to this playlist</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={playlist.movies}
-          keyExtractor={(item) => String(item.tmdbId)}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
+      {/* Movies list */}
+      <FlatList
+        data={playlist.movies}
+        keyExtractor={(item) => item.tmdbId.toString()}
+        contentContainerStyle={{ padding: 16, gap: 12 }}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.movieItem}
+            onPress={() => router.push(`/movie/${item.tmdbId}`)}
+            activeOpacity={0.85}
+          >
+            <Image
+              source={{
+                uri: item.posterUrl || 'https://via.placeholder.com/60x90?text=?',
+              }}
+              style={styles.moviePoster}
+              resizeMode="cover"
+            />
+            <View style={styles.movieInfo}>
+              <Text style={styles.movieTitle} numberOfLines={2}>{item.movieTitle}</Text>
+              <Text style={styles.addedAt}>
+                Added {new Date(item.addedAt).toLocaleDateString()}
+              </Text>
+            </View>
             <TouchableOpacity
-              style={styles.movieItem}
-              onPress={() => router.push(`/movie/${item.tmdbId}`)}
-              activeOpacity={0.8}
+              onPress={() => handleRemoveMovie(item.tmdbId, item.movieTitle)}
+              style={styles.removeBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Image
-                source={{ uri: item.posterUrl || 'https://via.placeholder.com/60x90/0D1A10/2ECC71' }}
-                style={styles.moviePoster}
-                resizeMode="cover"
-              />
-              <View style={styles.movieInfo}>
-                <Text style={styles.movieTitle} numberOfLines={2}>{item.movieTitle}</Text>
-                <Text style={styles.movieAdded}>
-                  Added {new Date(item.addedAt).toLocaleDateString()}
-                </Text>
-              </View>
-              <View style={styles.viewHint}>
-                <Text style={styles.viewHintText}>›</Text>
-              </View>
+              <Text style={styles.removeBtnText}>✕</Text>
             </TouchableOpacity>
-          )}
-          ListFooterComponent={<View style={{ height: 80 }} />}
-        />
-      )}
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>📭</Text>
+            <Text style={styles.emptyText}>No movies yet</Text>
+            <Text style={styles.emptySubtext}>Search for movies and add them to this playlist</Text>
+          </View>
+        }
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background, paddingTop: 56 },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: Colors.background,
+  container: { flex: 1, backgroundColor: '#0F172A' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F172A', gap: 12 },
+  errorText: { color: '#F87171', fontSize: 14 },
+  backBtn: { padding: 12 },
+  backBtnText: { color: '#22C55E', fontSize: 16 },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingTop: 54,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    backgroundColor: '#1E293B',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+    gap: 12,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 4,
   },
-  header: {
+  backButtonText: { color: '#F1F5F9', fontSize: 22 },
+
+  headerInfo: { flex: 1 },
+  playlistName: { color: '#F1F5F9', fontSize: 20, fontWeight: '800' },
+  playlistDesc: { color: '#64748B', fontSize: 13, marginTop: 4 },
+  playlistOwner: { color: '#22C55E', fontSize: 12, marginTop: 4 },
+
+  likeButton: {
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#334155',
+    minWidth: 52,
+  },
+  likeButtonActive: { backgroundColor: '#2A0A0A' },
+  likeIcon: { fontSize: 18 },
+  likeCount: { color: '#94A3B8', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  likeCountActive: { color: '#EF4444' },
+
+  statsBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.base,
-    marginBottom: Spacing.lg,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#0F172A',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
   },
-  backBtn: {
-    width: 38,
-    height: 38,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
+  statsText: { color: '#64748B', fontSize: 13 },
+  publicBadge: {
+    color: '#22C55E',
+    fontSize: 11,
+    fontWeight: '700',
+    backgroundColor: '#0F2A1A',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
-  likeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    minWidth: 64,
-    justifyContent: 'center',
-  },
-  likeBtnActive: {
-    backgroundColor: Colors.primaryMuted,
-    borderColor: Colors.primary + '50',
-  },
-  likeIcon: {
-    fontSize: 16,
-    color: Colors.textMuted,
-  },
-  likeIconActive: {
-    color: Colors.primary,
-  },
-  likeCount: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textMuted,
-    fontWeight: '600',
-  },
-  likeCountActive: {
-    color: Colors.primary,
-  },
-  info: {
-    paddingHorizontal: Spacing.base,
-    marginBottom: Spacing.lg,
-  },
-  playlistName: {
-    fontSize: Typography.sizes.xxl,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: -0.5,
-    marginBottom: Spacing.sm,
-  },
-  playlistDesc: {
-    fontSize: Typography.sizes.base,
-    color: Colors.textSecondary,
-    lineHeight: 22,
-    marginBottom: Spacing.md,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    flexWrap: 'wrap',
-  },
-  metaText: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textMuted,
-  },
-  metaDot: {
-    color: Colors.textMuted,
-    fontSize: Typography.sizes.sm,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border,
-    marginHorizontal: Spacing.base,
-    marginBottom: Spacing.lg,
-  },
-  listContent: {
-    paddingHorizontal: Spacing.base,
-  },
+
   movieItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: Spacing.sm,
-    padding: Spacing.md,
-    gap: Spacing.md,
-  },
-  moviePoster: {
-    width: 44,
-    height: 66,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.surface,
-  },
-  movieInfo: { flex: 1 },
-  movieTitle: {
-    fontSize: Typography.sizes.base,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-    lineHeight: 20,
-  },
-  movieAdded: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textMuted,
-    marginTop: 4,
-  },
-  viewHint: {
-    width: 28,
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    overflow: 'hidden',
     alignItems: 'center',
   },
-  viewHintText: {
-    fontSize: 22,
-    color: Colors.textMuted,
-    lineHeight: 26,
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.md,
-    paddingHorizontal: Spacing.xxxl,
-  },
-  emptyEmoji: { fontSize: 48 },
-  emptyTitle: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  emptyDesc: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
+  moviePoster: { width: 56, height: 80 },
+  movieInfo: { flex: 1, padding: 12 },
+  movieTitle: { color: '#F1F5F9', fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  addedAt: { color: '#64748B', fontSize: 11, marginTop: 4 },
+  removeBtn: { padding: 12 },
+  removeBtnText: { color: '#475569', fontSize: 16 },
+
+  emptyState: { alignItems: 'center', paddingVertical: 60, gap: 8 },
+  emptyIcon: { fontSize: 48 },
+  emptyText: { color: '#94A3B8', fontSize: 18, fontWeight: '600' },
+  emptySubtext: { color: '#475569', fontSize: 13, textAlign: 'center' },
 });

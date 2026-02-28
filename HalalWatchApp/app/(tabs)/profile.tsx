@@ -1,373 +1,346 @@
 // app/(tabs)/profile.tsx
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
 } from 'react-native';
-import { router } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { profileApi, ProfileData } from '../../services/api';
-import { useAuth } from '../../hooks/useAuth';
-import { IslamicPattern } from '../../components/IslamicPattern';
+import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { profileApi, ProfileData, playlistApi, MyPlaylist } from '../../services/api';
 
-function StatBox({ label, value }: { label: string; value: string | number }) {
-  return (
-    <View style={styles.statBox}>
+export default function ProfileScreen() {
+  const router = useRouter();
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [playlists, setPlaylists] = useState<MyPlaylist[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    checkAuthAndLoad();
+  }, []);
+
+  const checkAuthAndLoad = async () => {
+    const token = await AsyncStorage.getItem('token');
+    setIsLoggedIn(!!token);
+    if (token) {
+      await fetchProfile();
+    } else {
+      setLoading(false);
+    }
+  };
+
+  // FIX: fetch /profile/me for user-specific stats, not global stats
+  const fetchProfile = async () => {
+    try {
+      setError(null);
+      const [profileData, myPlaylists] = await Promise.all([
+        profileApi.getMe(),
+        playlistApi.getMine(),
+      ]);
+      setProfile(profileData);
+      setPlaylists(myPlaylists);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchProfile();
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          await AsyncStorage.removeItem('token');
+          setIsLoggedIn(false);
+          setProfile(null);
+          setPlaylists([]);
+        },
+      },
+    ]);
+  };
+
+  const StatCard = ({ value, label, icon }: { value: string | number; label: string; icon: string }) => (
+    <View style={styles.statCard}>
+      <Text style={styles.statIcon}>{icon}</Text>
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
-}
-
-export default function ProfileScreen() {
-  const { isLoggedIn, logout } = useAuth();
-  const [profile, setProfile] = useState<ProfileData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!isLoggedIn) { setLoading(false); return; }
-    profileApi.getMe()
-      .then(setProfile)
-      .catch(() => { })
-      .finally(() => setLoading(false));
-  }, [isLoggedIn]);
-
-  const handleLogout = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: logout },
-    ]);
-  };
-
-  if (!isLoggedIn) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Profile</Text>
-        </View>
-        <View style={styles.authPrompt}>
-          <IslamicPattern size={120} opacity={0.08} />
-          <Text style={styles.authTitle}>Welcome to HalalWatch</Text>
-          <Text style={styles.authDesc}>
-            Sign in to track your watchlists, view your history, and join the community.
-          </Text>
-          <TouchableOpacity style={styles.loginBtn} onPress={() => router.push('/(auth)/login')}>
-            <Text style={styles.loginBtnText}>Sign In</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.registerBtn} onPress={() => router.push('/(auth)/register')}>
-            <Text style={styles.registerBtnText}>Create Account</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator color={Colors.primary} size="large" />
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#22C55E" />
       </View>
     );
   }
 
-  const initials = profile?.username
-    ? profile.username.slice(0, 2).toUpperCase()
-    : '??';
+  if (!isLoggedIn) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.guestIcon}>👤</Text>
+        <Text style={styles.guestTitle}>Join HalalWatch</Text>
+        <Text style={styles.guestSubtitle}>Create an account to save playlists and track your watchlist</Text>
+        <TouchableOpacity
+          style={styles.loginBtn}
+          onPress={() => router.push('/(auth)/login')}
+        >
+          <Text style={styles.loginBtnText}>Sign In</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.registerBtn}
+          onPress={() => router.push('/(auth)/register')}
+        >
+          <Text style={styles.registerBtnText}>Create Account</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryBtn} onPress={fetchProfile}>
+          <Text style={styles.retryBtnText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-        {/* Profile Hero */}
-        <View style={styles.profileHero}>
-          <LinearGradient
-            colors={['#0A2010', Colors.background]}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.patternBg}>
-            <IslamicPattern size={200} opacity={0.05} />
-          </View>
-
-          <View style={styles.avatarWrapper}>
-            <LinearGradient
-              colors={[Colors.primaryDim, Colors.primaryMuted]}
-              style={styles.avatar}
-            >
-              <Text style={styles.avatarText}>{initials}</Text>
-            </LinearGradient>
-          </View>
-
-          <Text style={styles.username}>{profile?.username}</Text>
-          {profile?.email && (
-            <Text style={styles.email}>{profile.email}</Text>
-          )}
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22C55E" />}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>
+            {profile?.username?.charAt(0).toUpperCase() || '?'}
+          </Text>
         </View>
+        <View style={styles.userInfo}>
+          <Text style={styles.username}>{profile?.username || 'User'}</Text>
+          {profile?.email && <Text style={styles.email}>{profile.email}</Text>}
+        </View>
+        <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+          <Text style={styles.logoutBtnText}>Logout</Text>
+        </TouchableOpacity>
+      </View>
 
-        {/* Stats */}
-        {profile?.stats && (
-          <View style={styles.statsRow}>
-            <StatBox label="Playlists" value={profile.stats.playlistsCount} />
-            <View style={styles.statDivider} />
-            <StatBox label="Films Analyzed" value={profile.stats.totalAnalyzedMovies} />
-            <View style={styles.statDivider} />
-            <StatBox
-              label="Avg. Score"
-              value={`${profile.stats.averageHalalScore}%`}
+      {/* FIX: User-specific stats from /profile/me */}
+      {profile?.stats && (
+        <View style={styles.statsSection}>
+          <Text style={styles.sectionTitle}>Your Stats</Text>
+          <View style={styles.statsGrid}>
+            <StatCard
+              icon="📋"
+              value={profile.stats.playlistsCount}
+              label="Playlists"
+            />
+            <StatCard
+              icon="🎬"
+              value={profile.stats.totalAnalyzedMovies}
+              label="Analyzed"
+            />
+            <StatCard
+              icon="⭐"
+              value={
+                profile.stats.averageHalalScore > 0
+                  ? `${Math.round(profile.stats.averageHalalScore)}`
+                  : 'N/A'
+              }
+              label="Avg Score"
             />
           </View>
-        )}
+        </View>
+      )}
 
-        {/* Playlists */}
-        {profile?.playlists && profile.playlists.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>My Playlists</Text>
-            {profile.playlists.map((p) => (
-              <TouchableOpacity
-                key={p.id}
-                style={styles.playlistRow}
-                onPress={() => router.push(`/playlist/${p.id}`)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.playlistIconBox}>
-                  <Text style={styles.playlistIcon}>📋</Text>
-                </View>
-                <View style={styles.playlistInfo}>
-                  <Text style={styles.playlistName}>{p.name}</Text>
-                  <Text style={styles.playlistMeta}>
-                    {p.movieCount} films · {p.isPublic ? 'Public' : 'Private'}
-                  </Text>
-                </View>
-                <Text style={styles.chevron}>›</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* Actions */}
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-            <Text style={styles.logoutText}>Sign Out</Text>
+      {/* My Playlists */}
+      <View style={styles.playlistsSection}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>My Playlists</Text>
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/playlists')}
+            style={styles.seeAllBtn}
+          >
+            <Text style={styles.seeAllText}>+ New</Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
-    </View>
+
+        {playlists.length === 0 ? (
+          <View style={styles.emptyPlaylists}>
+            <Text style={styles.emptyIcon}>📭</Text>
+            <Text style={styles.emptyText}>No playlists yet</Text>
+            <Text style={styles.emptySubtext}>Create playlists to organize your movies</Text>
+          </View>
+        ) : (
+          playlists.map((pl) => (
+            <TouchableOpacity
+              key={pl.id}
+              style={styles.playlistRow}
+              onPress={() => router.push(`/playlist/${pl.id}`)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.playlistIcon}>
+                <Text style={styles.playlistIconText}>🎬</Text>
+              </View>
+              <View style={styles.playlistInfo}>
+                <Text style={styles.playlistName}>{pl.name}</Text>
+                <Text style={styles.playlistMeta}>
+                  {pl.movieCount} movies · {pl.isPublic ? 'Public' : 'Private'}
+                </Text>
+              </View>
+              <Text style={styles.playlistChevron}>›</Text>
+            </TouchableOpacity>
+          ))
+        )}
+      </View>
+
+      <View style={{ height: 80 }} />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background, paddingTop: 60 },
-  header: {
-    paddingHorizontal: Spacing.base,
-    marginBottom: Spacing.lg,
-  },
-  headerTitle: {
-    fontSize: Typography.sizes.xxl,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: -0.5,
-  },
-  loadingContainer: {
+  container: { flex: 1, backgroundColor: '#0F172A' },
+  center: {
     flex: 1,
-    backgroundColor: Colors.background,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#0F172A',
+    gap: 12,
+    paddingHorizontal: 32,
   },
+  errorText: { color: '#F87171', fontSize: 14 },
+  retryBtn: { backgroundColor: '#22C55E', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
+  retryBtnText: { color: '#fff', fontWeight: '600' },
 
-  // Auth prompt
-  authPrompt: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.xxxl,
-    gap: Spacing.lg,
-  },
-  authTitle: {
-    fontSize: Typography.sizes.xl,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    letterSpacing: -0.3,
-  },
-  authDesc: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
+  guestIcon: { fontSize: 64 },
+  guestTitle: { color: '#F1F5F9', fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  guestSubtitle: { color: '#64748B', fontSize: 14, textAlign: 'center', lineHeight: 20 },
   loginBtn: {
     width: '100%',
-    paddingVertical: Spacing.base,
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.full,
+    backgroundColor: '#22C55E',
+    borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
+    marginTop: 8,
   },
-  loginBtnText: {
-    color: Colors.textInverse,
-    fontWeight: '700',
-    fontSize: Typography.sizes.base,
-    letterSpacing: 0.3,
-  },
+  loginBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   registerBtn: {
     width: '100%',
-    paddingVertical: Spacing.base,
-    backgroundColor: 'transparent',
-    borderRadius: Radius.full,
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
+    borderColor: '#334155',
   },
-  registerBtnText: {
-    color: Colors.textSecondary,
-    fontWeight: '600',
-    fontSize: Typography.sizes.base,
-  },
+  registerBtnText: { color: '#94A3B8', fontWeight: '600', fontSize: 15 },
 
-  // Profile hero
-  profileHero: {
+  header: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.xxl,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  patternBg: {
-    position: 'absolute',
-    top: -20,
-    right: -40,
-    opacity: 1,
-  },
-  avatarWrapper: {
-    marginBottom: Spacing.base,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 10,
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    backgroundColor: '#1E293B',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+    gap: 14,
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#22C55E',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: Colors.primary + '60',
   },
-  avatarText: {
-    fontSize: Typography.sizes.xl,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: 1,
+  avatarText: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  userInfo: { flex: 1 },
+  username: { color: '#F1F5F9', fontSize: 18, fontWeight: '700' },
+  email: { color: '#64748B', fontSize: 12, marginTop: 2 },
+  logoutBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: '#334155',
   },
-  username: {
-    fontSize: Typography.sizes.xl,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: -0.3,
-    marginBottom: 4,
-  },
-  email: {
-    fontSize: Typography.sizes.sm,
-    color: Colors.textMuted,
-  },
+  logoutBtnText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
 
-  // Stats
-  statsRow: {
-    flexDirection: 'row',
-    marginHorizontal: Spacing.base,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.xl,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingVertical: Spacing.lg,
-    marginBottom: Spacing.xl,
-  },
-  statBox: {
+  statsSection: { padding: 20 },
+  sectionTitle: { color: '#F1F5F9', fontSize: 16, fontWeight: '700', marginBottom: 14 },
+  statsGrid: { flexDirection: 'row', gap: 12 },
+  statCard: {
     flex: 1,
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
     gap: 4,
   },
-  statValue: {
-    fontSize: Typography.sizes.xl,
-    fontWeight: '800',
-    color: Colors.primary,
-    letterSpacing: -0.5,
-  },
-  statLabel: {
-    fontSize: 10,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: Colors.border,
-    marginVertical: Spacing.xs,
-  },
+  statIcon: { fontSize: 22 },
+  statValue: { color: '#22C55E', fontSize: 22, fontWeight: '800' },
+  statLabel: { color: '#64748B', fontSize: 11 },
 
-  // Section
-  section: {
-    paddingHorizontal: Spacing.base,
-    marginBottom: Spacing.xl,
+  playlistsSection: { paddingHorizontal: 20 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  seeAllBtn: {
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
   },
-  sectionTitle: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: Spacing.md,
-    letterSpacing: -0.3,
-  },
+  seeAllText: { color: '#22C55E', fontSize: 13, fontWeight: '600' },
+
+  emptyPlaylists: { alignItems: 'center', paddingVertical: 40, gap: 8 },
+  emptyIcon: { fontSize: 40 },
+  emptyText: { color: '#94A3B8', fontSize: 16, fontWeight: '600' },
+  emptySubtext: { color: '#475569', fontSize: 13, textAlign: 'center' },
+
   playlistRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing.base,
-    marginBottom: Spacing.sm,
-    gap: Spacing.md,
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    gap: 12,
   },
-  playlistIconBox: {
+  playlistIcon: {
     width: 40,
     height: 40,
-    backgroundColor: Colors.glassGreen,
-    borderRadius: Radius.md,
+    borderRadius: 8,
+    backgroundColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.glassBorder,
   },
-  playlistIcon: { fontSize: 18 },
+  playlistIconText: { fontSize: 18 },
   playlistInfo: { flex: 1 },
-  playlistName: {
-    fontSize: Typography.sizes.base,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-  },
-  playlistMeta: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  chevron: {
-    fontSize: 24,
-    color: Colors.textMuted,
-    lineHeight: 28,
-  },
-
-  logoutBtn: {
-    paddingVertical: Spacing.base,
-    backgroundColor: 'rgba(231,76,60,0.1)',
-    borderRadius: Radius.full,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(231,76,60,0.25)',
-  },
-  logoutText: {
-    color: Colors.scoreBad,
-    fontWeight: '700',
-    fontSize: Typography.sizes.base,
-  },
+  playlistName: { color: '#F1F5F9', fontSize: 14, fontWeight: '600' },
+  playlistMeta: { color: '#64748B', fontSize: 12, marginTop: 2 },
+  playlistChevron: { color: '#475569', fontSize: 22 },
 });

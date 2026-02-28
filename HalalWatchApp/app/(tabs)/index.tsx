@@ -1,90 +1,47 @@
 // app/(tabs)/index.tsx
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, RefreshControl,
-  TouchableOpacity, ActivityIndicator, Dimensions
+  View,
+  Text,
+  ScrollView,
+  FlatList,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Dimensions,
+  RefreshControl,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
-import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { homeApi, HomepageData, CommunityPlaylist } from '../../services/api';
-import { MovieCard } from '../../components/MovieCard';
-import { IslamicPattern } from '../../components/IslamicPattern';
+import { useRouter } from 'expo-router';
+import { homeApi, HomepageData, CommunityPlaylist, MovieCard } from '../../services/api';
 
 const { width } = Dimensions.get('window');
-
-function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <View style={styles.sectionHeader}>
-      <View style={styles.sectionTitleRow}>
-        <View style={styles.sectionAccent} />
-        <Text style={styles.sectionTitle}>{title}</Text>
-      </View>
-      {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
-    </View>
-  );
-}
-
-function CommunityPlaylistCard({ item }: { item: CommunityPlaylist }) {
-  return (
-    <TouchableOpacity
-      style={styles.communityCard}
-      onPress={() => router.push(`/playlist/${item.id}`)}
-      activeOpacity={0.85}
-    >
-      <View style={styles.communityPosters}>
-        {item.previewPosters.slice(0, 4).map((p, i) => (
-          <View
-            key={i}
-            style={[
-              styles.communityPosterSlot,
-              { left: i * 18, zIndex: 4 - i }
-            ]}
-          >
-            {p ? (
-              <React.Fragment>
-                {/* Image would load here */}
-              </React.Fragment>
-            ) : null}
-          </View>
-        ))}
-      </View>
-      <View style={styles.communityInfo}>
-        <Text style={styles.communityName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.communityMeta}>
-          by {item.creator} · {item.movieCount} films
-        </Text>
-        <View style={styles.communityFooter}>
-          <Text style={styles.communityLikes}>♥ {item.likes}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
+const CARD_WIDTH = width * 0.42;
 
 export default function HomeScreen() {
+  const router = useRouter();
   const [data, setData] = useState<HomepageData | null>(null);
-  const [community, setCommunity] = useState<CommunityPlaylist[]>([]);
+  const [communityPlaylists, setCommunityPlaylists] = useState<CommunityPlaylist[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = async () => {
     try {
       setError(null);
-      const [homeData, communityData] = await Promise.all([
+      const [homeData, playlists] = await Promise.all([
         homeApi.getHomepage(),
         homeApi.getCommunityPlaylists(),
       ]);
       setData(homeData);
-      setCommunity(communityData);
+      setCommunityPlaylists(playlists);
     } catch (e: any) {
-      setError(e.message || 'Failed to load');
+      setError(e.message || 'Failed to load homepage');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  };
 
   useEffect(() => { fetchData(); }, []);
 
@@ -93,370 +50,279 @@ export default function HomeScreen() {
     fetchData();
   };
 
+  const ScoreBar = ({ score, color }: { score: number; color: string }) => (
+    <View style={styles.scoreBarBg}>
+      <View style={[styles.scoreBarFill, { width: `${score}%`, backgroundColor: color }]} />
+    </View>
+  );
+
+  const MovieCard = ({ movie, onPress }: { movie: MovieCard; onPress: () => void }) => (
+    <TouchableOpacity style={styles.movieCard} onPress={onPress} activeOpacity={0.85}>
+      <Image
+        source={{ uri: movie.poster || 'https://via.placeholder.com/150x220?text=No+Image' }}
+        style={styles.moviePoster}
+        resizeMode="cover"
+      />
+      <View style={styles.movieInfo}>
+        <Text style={styles.movieTitle} numberOfLines={2}>{movie.title}</Text>
+        <Text style={styles.movieYear}>{movie.year}</Text>
+        <View style={styles.scoreBadge}>
+          <Text style={styles.scoreBadgeText}>★ {movie.overallScore}/100</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const Section = ({
+    title,
+    subtitle,
+    movies,
+    accentColor,
+  }: {
+    title: string;
+    subtitle: string;
+    movies: MovieCard[];
+    accentColor: string;
+  }) => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <View style={[styles.sectionAccent, { backgroundColor: accentColor }]} />
+        <View>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          <Text style={styles.sectionSubtitle}>{subtitle}</Text>
+        </View>
+      </View>
+      <FlatList
+        horizontal
+        data={movies}
+        keyExtractor={(item) => item.tmdbId.toString()}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
+        renderItem={({ item }) => (
+          <MovieCard
+            movie={item}
+            onPress={() => router.push(`/movie/${item.tmdbId}`)}
+          />
+        )}
+      />
+    </View>
+  );
+
+  const PlaylistCard = ({ playlist }: { playlist: CommunityPlaylist }) => {
+    // FIX: properly render preview posters from the array
+    const posters = playlist.previewPosters || [];
+
+    return (
+      <TouchableOpacity
+        style={styles.playlistCard}
+        onPress={() => router.push(`/playlist/${playlist.id}`)}
+        activeOpacity={0.85}
+      >
+        {/* Poster grid - FIXED: was rendering empty fragment before */}
+        <View style={styles.playlistPostersGrid}>
+          {posters.length > 0 ? (
+            posters.slice(0, 4).map((poster, idx) => (
+              <Image
+                key={idx}
+                source={{ uri: poster }}
+                style={[
+                  styles.playlistPosterThumb,
+                  posters.length === 1 && styles.playlistPosterFull,
+                ]}
+                resizeMode="cover"
+              />
+            ))
+          ) : (
+            <View style={styles.playlistPosterPlaceholder}>
+              <Text style={styles.playlistPosterPlaceholderText}>📽️</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.playlistInfo}>
+          <Text style={styles.playlistName} numberOfLines={1}>{playlist.name}</Text>
+          <Text style={styles.playlistMeta}>by {playlist.creator}</Text>
+          <View style={styles.playlistStats}>
+            <Text style={styles.playlistStatText}>🎬 {playlist.movieCount}</Text>
+            <Text style={styles.playlistStatText}>❤️ {playlist.likes}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator color={Colors.primary} size="large" />
-        <Text style={styles.loadingText}>Loading...</Text>
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#22C55E" />
+        <Text style={styles.loadingText}>Loading HalalWatch...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorIcon}>⚠️</Text>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryBtn} onPress={fetchData}>
+          <Text style={styles.retryBtnText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={Colors.primary}
-          />
-        }
-      >
-        {/* Hero Header */}
-        <View style={styles.hero}>
-          <LinearGradient
-            colors={['#0A2010', Colors.background]}
-            style={styles.heroGradient}
-          />
-          <View style={styles.heroPatternTopRight}>
-            <IslamicPattern size={160} opacity={0.07} />
-          </View>
-          <View style={styles.heroPatternBottomLeft}>
-            <IslamicPattern size={100} opacity={0.05} />
-          </View>
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22C55E" />}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>HalalWatch</Text>
+        <Text style={styles.headerSubtitle}>Discover movies with confidence</Text>
+      </View>
 
-          <View style={styles.heroContent}>
-            <View style={styles.logoRow}>
-              <View style={styles.logoMark}>
-                <Text style={styles.logoMarkText}>هـ</Text>
-              </View>
-              <View>
-                <Text style={styles.appName}>HalalWatch</Text>
-                <Text style={styles.appTagline}>Family-Safe Cinema Guide</Text>
-              </View>
+      {/* FIX: Corrected section labels - low nudity = clean, not high score = clean */}
+      {data && (
+        <>
+          <Section
+            title="Nudity-Free"
+            subtitle="Movies with lowest nudity scores"
+            movies={data.nudityFree}
+            accentColor="#22C55E"
+          />
+          <Section
+            title="LGBT-Free"
+            subtitle="Movies with no LGBT content"
+            movies={data.lgbtFree}
+            accentColor="#3B82F6"
+          />
+          <Section
+            title="Bias-Free"
+            subtitle="No anti-Islam or Arab bias"
+            movies={data.biasFree}
+            accentColor="#F59E0B"
+          />
+        </>
+      )}
+
+      {/* Community Playlists */}
+      {communityPlaylists.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionAccent, { backgroundColor: '#A855F7' }]} />
+            <View>
+              <Text style={styles.sectionTitle}>Community Playlists</Text>
+              <Text style={styles.sectionSubtitle}>Curated by the community</Text>
             </View>
-
-            <View style={styles.heroDivider} />
-
-            <Text style={styles.heroSubtitle}>
-              Discover movies rated for content that matters to your family
-            </Text>
           </View>
+          <FlatList
+            horizontal
+            data={communityPlaylists}
+            keyExtractor={(item) => item.id.toString()}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
+            renderItem={({ item }) => <PlaylistCard playlist={item} />}
+          />
         </View>
+      )}
 
-        {error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>⚠ {error}</Text>
-            <TouchableOpacity onPress={fetchData} style={styles.retryBtn}>
-              <Text style={styles.retryText}>Try Again</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            {/* Nudity-Free Section */}
-            {data?.nudityFree && data.nudityFree.length > 0 && (
-              <View style={styles.section}>
-                <SectionHeader
-                  title="Clean Content"
-                  subtitle="Low nudity & sexual content scores"
-                />
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}
-                >
-                  {data.nudityFree.map((movie) => (
-                    <MovieCard
-                      key={movie.tmdbId}
-                      tmdbId={movie.tmdbId}
-                      title={movie.title}
-                      poster={movie.poster}
-                      year={movie.year}
-                      overallScore={movie.overallScore}
-                      mpaRating={movie.mpaRating}
-                      compact
-                    />
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-            {/* LGBT-Free Section */}
-            {data?.lgbtFree && data.lgbtFree.length > 0 && (
-              <View style={styles.section}>
-                <SectionHeader
-                  title="Family Values"
-                  subtitle="Traditional content for all ages"
-                />
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}
-                >
-                  {data.lgbtFree.map((movie) => (
-                    <MovieCard
-                      key={movie.tmdbId}
-                      tmdbId={movie.tmdbId}
-                      title={movie.title}
-                      poster={movie.poster}
-                      year={movie.year}
-                      overallScore={movie.overallScore}
-                      compact
-                    />
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-            {/* Bias-Free Section */}
-            {data?.biasFree && data.biasFree.length > 0 && (
-              <View style={styles.section}>
-                <SectionHeader
-                  title="Fair Representation"
-                  subtitle="No anti-Islamic or anti-Arab bias"
-                />
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}
-                >
-                  {data.biasFree.map((movie) => (
-                    <MovieCard
-                      key={movie.tmdbId}
-                      tmdbId={movie.tmdbId}
-                      title={movie.title}
-                      poster={movie.poster}
-                      year={movie.year}
-                      overallScore={movie.overallScore}
-                      compact
-                    />
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-            {/* Community Playlists */}
-            {community.length > 0 && (
-              <View style={[styles.section, { marginBottom: 100 }]}>
-                <SectionHeader
-                  title="Community Picks"
-                  subtitle="Curated by the community"
-                />
-                {community.slice(0, 5).map((p) => (
-                  <CommunityPlaylistCard key={p.id} item={p} />
-                ))}
-              </View>
-            )}
-          </>
-        )}
-      </ScrollView>
-    </View>
+      <View style={{ height: 80 }} />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 20 },
+  container: { flex: 1, backgroundColor: '#0F172A' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F172A', gap: 12 },
+  loadingText: { color: '#94A3B8', fontSize: 14 },
+  errorIcon: { fontSize: 40 },
+  errorText: { color: '#F87171', fontSize: 14, textAlign: 'center', paddingHorizontal: 32 },
+  retryBtn: { backgroundColor: '#22C55E', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8, marginTop: 8 },
+  retryBtnText: { color: '#fff', fontWeight: '600' },
 
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: Colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.md,
-  },
-  loadingText: {
-    color: Colors.textMuted,
-    fontSize: Typography.sizes.sm,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-
-  // Hero
-  hero: {
+  header: {
+    paddingHorizontal: 20,
     paddingTop: 60,
-    paddingBottom: Spacing.xl,
-    paddingHorizontal: Spacing.base,
-    position: 'relative',
-    overflow: 'hidden',
+    paddingBottom: 24,
+    backgroundColor: '#0F172A',
   },
-  heroGradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  heroPatternTopRight: {
-    position: 'absolute',
-    top: -20,
-    right: -20,
-    opacity: 1,
-  },
-  heroPatternBottomLeft: {
-    position: 'absolute',
-    bottom: 0,
-    left: -20,
-    opacity: 1,
-  },
-  heroContent: { position: 'relative', zIndex: 1 },
-  logoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    marginBottom: Spacing.lg,
-  },
-  logoMark: {
-    width: 48,
-    height: 48,
-    backgroundColor: Colors.primaryMuted,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoMarkText: {
-    fontSize: 24,
-    color: Colors.primary,
-    fontWeight: '700',
-  },
-  appName: {
-    fontSize: Typography.sizes.xl,
+  headerTitle: {
+    fontSize: 28,
     fontWeight: '800',
-    color: Colors.textPrimary,
+    color: '#F1F5F9',
     letterSpacing: -0.5,
   },
-  appTagline: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.primary,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-    marginTop: 2,
-  },
-  heroDivider: {
-    height: 1,
-    backgroundColor: Colors.border,
-    marginBottom: Spacing.md,
-  },
-  heroSubtitle: {
-    fontSize: Typography.sizes.base,
-    color: Colors.textSecondary,
-    lineHeight: 22,
-  },
+  headerSubtitle: { color: '#64748B', fontSize: 14, marginTop: 4 },
 
-  // Sections
-  section: {
-    paddingHorizontal: Spacing.base,
-    marginTop: Spacing.xl,
-  },
+  section: { marginBottom: 28 },
   sectionHeader: {
-    marginBottom: Spacing.md,
-  },
-  sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    paddingHorizontal: 20,
+    marginBottom: 14,
+    gap: 12,
   },
-  sectionAccent: {
-    width: 3,
-    height: 18,
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.full,
-  },
-  sectionTitle: {
-    fontSize: Typography.sizes.lg,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  sectionSubtitle: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textMuted,
-    marginTop: 3,
-    marginLeft: 11,
-    letterSpacing: 0.2,
-  },
-  horizontalList: {
-    gap: Spacing.md,
-    paddingRight: Spacing.base,
-  },
+  sectionAccent: { width: 4, height: 36, borderRadius: 2 },
+  sectionTitle: { color: '#F1F5F9', fontSize: 18, fontWeight: '700' },
+  sectionSubtitle: { color: '#64748B', fontSize: 12, marginTop: 2 },
 
-  // Community
-  communityCard: {
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing.base,
-    marginBottom: Spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
+  movieCard: {
+    width: CARD_WIDTH,
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    overflow: 'hidden',
   },
-  communityPosters: {
-    width: 72,
-    height: 48,
-    position: 'relative',
+  moviePoster: { width: '100%', height: CARD_WIDTH * 1.4 },
+  movieInfo: { padding: 10 },
+  movieTitle: { color: '#F1F5F9', fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  movieYear: { color: '#64748B', fontSize: 11, marginTop: 3 },
+  scoreBadge: {
+    marginTop: 6,
+    backgroundColor: '#0F2A1A',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
   },
-  communityPosterSlot: {
-    position: 'absolute',
-    width: 32,
-    height: 48,
-    backgroundColor: Colors.surfaceHigh,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  communityInfo: { flex: 1 },
-  communityName: {
-    fontSize: Typography.sizes.base,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-  },
-  communityMeta: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.textMuted,
-    marginTop: 3,
-  },
-  communityFooter: {
-    flexDirection: 'row',
-    marginTop: Spacing.sm,
-  },
-  communityLikes: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.primary,
-    fontWeight: '600',
-  },
+  scoreBadgeText: { color: '#22C55E', fontSize: 11, fontWeight: '700' },
 
-  // Error
-  errorContainer: {
-    margin: Spacing.base,
-    padding: Spacing.xl,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
+  scoreBarBg: { height: 4, backgroundColor: '#1E293B', borderRadius: 2, marginTop: 4 },
+  scoreBarFill: { height: 4, borderRadius: 2 },
+
+  playlistCard: {
+    width: 180,
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  playlistPostersGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    width: 180,
+    height: 120,
+  },
+  playlistPosterThumb: {
+    width: 90,
+    height: 60,
+  },
+  playlistPosterFull: {
+    width: 180,
+    height: 120,
+  },
+  playlistPosterPlaceholder: {
+    width: 180,
+    height: 120,
+    backgroundColor: '#334155',
     alignItems: 'center',
-    gap: Spacing.md,
+    justifyContent: 'center',
   },
-  errorText: {
-    color: Colors.scoreBad,
-    fontSize: Typography.sizes.base,
-    textAlign: 'center',
-  },
-  retryBtn: {
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.primaryMuted,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
-  },
-  retryText: {
-    color: Colors.primary,
-    fontWeight: '600',
-    fontSize: Typography.sizes.sm,
-  },
+  playlistPosterPlaceholderText: { fontSize: 32 },
+  playlistInfo: { padding: 10 },
+  playlistName: { color: '#F1F5F9', fontSize: 13, fontWeight: '700' },
+  playlistMeta: { color: '#64748B', fontSize: 11, marginTop: 2 },
+  playlistStats: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  playlistStatText: { color: '#94A3B8', fontSize: 11 },
 });

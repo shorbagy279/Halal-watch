@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("HalalWatch.API")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+aee7bb7066719ea8b2a8349bdbed4f827b6429f4")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+535ba069d84f81d9a46ce6d7ac9fa4d19bb9dbd5")]
 [assembly: System.Reflection.AssemblyProductAttribute("HalalWatch.API")]
 [assembly: System.Reflection.AssemblyTitleAttribute("HalalWatch.API")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -1,7 +1,22 @@
 // services/api.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
-const BASE_URL = 'http://localhost:5064/api';
+// Auto-detect the right host based on platform:
+//   web            → localhost  (browser on same machine)
+//   Android emu    → 10.0.2.2  (maps to host machine)
+//   iOS simulator  → localhost
+//   physical device → set YOUR_IP to your machine's LAN IP (e.g. 192.168.1.4)
+const YOUR_IP = '192.168.1.4'; // ← change this for physical device
+
+function getBaseUrl(): string {
+  if (Platform.OS === 'web') return 'http://localhost:5064/api';
+  if (Platform.OS === 'android') return `http://10.0.2.2:5064/api`;
+  // iOS simulator or physical device
+  return `http://${YOUR_IP}:5064/api`;
+}
+
+const BASE_URL = getBaseUrl();
 
 async function getToken(): Promise<string | null> {
   return await AsyncStorage.getItem('token');
@@ -19,17 +34,39 @@ async function request<T>(
     ...(options.headers || {}),
   };
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  const url = `${BASE_URL}${endpoint}`;
+  console.log(`[API] ${options.method || 'GET'} ${url} | token: ${token ? '✅' : '❌ MISSING'}`);
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.message || `HTTP ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetch(url, { ...options, headers });
+  } catch (networkErr: any) {
+    console.error(`[API] Network error on ${url}:`, networkErr.message);
+    throw new Error(
+      `Cannot reach server. Make sure backend is running on port 5064.`
+    );
   }
 
-  return response.json();
+  if (!response.ok) {
+    let errorMessage = `HTTP ${response.status}`;
+    try {
+      const error = await response.json();
+      errorMessage = error.message || error.title || errorMessage;
+    } catch {}
+    console.error(`[API] ${response.status} on ${url}:`, errorMessage);
+    if (response.status === 401) errorMessage = 'Not logged in. Please sign in first.';
+    throw new Error(errorMessage);
+  }
+
+  // Handle empty responses
+  const text = await response.text();
+  if (!text) return {} as T;
+  
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text as unknown as T;
+  }
 }
 
 // Auth
@@ -61,6 +98,7 @@ export const movieApi = {
   getReport: (tmdbId: number) =>
     request<MovieReport>(`/movie/report/${tmdbId}`),
 
+  // FIX: encode title properly, use correct endpoint format
   analyze: (tmdbId: number, title: string) =>
     request<AnalysisResult>(`/analyze/${tmdbId}/${encodeURIComponent(title)}`, {
       method: 'POST',
