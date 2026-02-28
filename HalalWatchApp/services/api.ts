@@ -1,0 +1,218 @@
+// services/api.ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const BASE_URL = 'http://localhost:5064/api';
+
+async function getToken(): Promise<string | null> {
+  return await AsyncStorage.getItem('token');
+}
+
+async function request<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = await getToken();
+
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
+
+  const response = await fetch(`${BASE_URL}${endpoint}`, {
+    ...options,
+    headers,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+// Auth
+export const authApi = {
+  register: (email: string, password: string) =>
+    request<{ token: string; message: string }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  login: (email: string, password: string) =>
+    request<{ token: string; message: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+};
+
+// Search
+export const searchApi = {
+  search: (query: string) =>
+    request<MovieSearchResult[]>(`/search?query=${encodeURIComponent(query)}`),
+};
+
+// Movie
+export const movieApi = {
+  getMovie: (tmdbId: number) =>
+    request<MoviePageResponse>(`/movie/${tmdbId}`),
+
+  getReport: (tmdbId: number) =>
+    request<MovieReport>(`/movie/report/${tmdbId}`),
+
+  analyze: (tmdbId: number, title: string) =>
+    request<AnalysisResult>(`/analyze/${tmdbId}/${encodeURIComponent(title)}`, {
+      method: 'POST',
+    }),
+};
+
+// Home
+export const homeApi = {
+  getHomepage: () =>
+    request<HomepageData>('/home'),
+
+  getCommunityPlaylists: () =>
+    request<CommunityPlaylist[]>('/home/community-playlists'),
+};
+
+// Playlists
+export const playlistApi = {
+  create: (name: string, description: string, isPublic: boolean) =>
+    request<{ playlistId: number; message: string }>('/playlists', {
+      method: 'POST',
+      body: JSON.stringify({ name, description, isPublic }),
+    }),
+
+  getMine: () =>
+    request<MyPlaylist[]>('/playlists/mine'),
+
+  getPlaylist: (id: number) =>
+    request<PlaylistDetail>(`/playlists/${id}`),
+
+  addMovie: (playlistId: number, tmdbId: number, movieTitle: string, posterUrl?: string) =>
+    request(`/playlists/${playlistId}/add`, {
+      method: 'POST',
+      body: JSON.stringify({ tmdbId, movieTitle, posterUrl }),
+    }),
+
+  removeMovie: (playlistId: number, tmdbId: number) =>
+    request(`/playlists/${playlistId}/remove/${tmdbId}`, {
+      method: 'DELETE',
+    }),
+
+  toggleLike: (playlistId: number) =>
+    request<{ liked: boolean; likes: number }>(`/playlists/${playlistId}/like`, {
+      method: 'POST',
+    }),
+};
+
+// Profile
+export const profileApi = {
+  getMe: () =>
+    request<ProfileData>('/profile/me'),
+
+  getProfile: (username: string) =>
+    request<ProfileData>(`/profile/${username}`),
+};
+
+// Types
+export interface MovieSearchResult {
+  id: number;
+  title: string;
+  year: string;
+  poster: string;
+}
+
+export interface MovieReport {
+  overallScore: number;
+  nudityScore: number;
+  lgbtScore: number;
+  biasScore: number;
+  verdict: 'APPROPRIATE' | 'CAUTION' | 'INAPPROPRIATE';
+  generatedAt: string;
+}
+
+export interface MoviePageResponse {
+  movie: {
+    id: number;
+    title: string;
+    overview: string;
+    year: string;
+    poster: string;
+  };
+  hasReport: boolean;
+  report?: MovieReport;
+}
+
+export interface AnalysisResult {
+  message: string;
+  movie: string;
+  overallScore: number;
+  verdict: string;
+  nuditySexScore: number;
+  lgbtScore: number;
+  islamArabBiasScore: number;
+  totalComments: number;
+}
+
+export interface MovieCard {
+  title: string;
+  poster: string;
+  year: string;
+  tmdbId: number;
+  mpaRating: string;
+  overallScore: number;
+  nudityScore: number;
+  lgbtScore: number;
+  biasScore: number;
+}
+
+export interface HomepageData {
+  nudityFree: MovieCard[];
+  lgbtFree: MovieCard[];
+  biasFree: MovieCard[];
+}
+
+export interface CommunityPlaylist {
+  id: number;
+  name: string;
+  description: string;
+  creator: string;
+  movieCount: number;
+  likes: number;
+  previewPosters: string[];
+}
+
+export interface MyPlaylist {
+  id: number;
+  name: string;
+  description: string;
+  isPublic: boolean;
+  movieCount: number;
+}
+
+export interface PlaylistDetail {
+  id: number;
+  name: string;
+  description: string;
+  isPublic: boolean;
+  owner: string;
+  movies: {
+    tmdbId: number;
+    movieTitle: string;
+    posterUrl: string;
+    addedAt: string;
+  }[];
+}
+
+export interface ProfileData {
+  username: string;
+  email?: string;
+  stats: {
+    playlistsCount: number;
+    totalAnalyzedMovies: number;
+    averageHalalScore: number;
+  };
+  playlists: MyPlaylist[];
+}

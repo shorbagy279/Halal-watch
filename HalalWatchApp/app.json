@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "HalalWatch",
+    "slug": "halalwatch",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0A1A0F"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ],
+    "scheme": "halalwatch",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.halalwatch.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A1A0F"
+      },
+      "package": "com.halalwatch.app"
+    }
+  }
+}
